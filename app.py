@@ -9,13 +9,10 @@ st.set_page_config(page_title="EBP Tracking System", layout="wide")
 
 URL_GSHEET = "https://docs.google.com/spreadsheets/d/1NUIuYhkusKMvPhjhMb4QHPBrTgBpQytle3PJf4k7opY/edit"
 
-# --- 2. FUNGSI KONEKSI (VERSI STABIL) ---
 def get_gspread_client():
-    # Mengambil kredensial dari secrets
     secret_dict = dict(st.secrets["gcp_service_account"])
     if "private_key" in secret_dict:
         secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
-    
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
     return gspread.authorize(creds)
@@ -27,22 +24,15 @@ def load_master_data():
         spreadsheet = client.open_by_url(URL_GSHEET)
         master_sheet = spreadsheet.worksheet("Master_Data")
         df_m = pd.DataFrame(master_sheet.get_all_records())
-        
-        # Cleaning
         df_m['Company'] = df_m['Company'].astype(str).str.strip()
         df_m['Brand'] = df_m['Brand'].astype(str).str.strip()
         return df_m
-    except Exception as e:
-        st.error(f"Gagal Load Master Data: {e}")
+    except:
         return pd.DataFrame(columns=["Company", "Brand"])
 
-# --- 3. LOGIKA FORM ---
+# --- 2. TAMPILAN UTAMA ---
 st.title("📊 EBP & Brand Revenue Tracking")
 df_master = load_master_data()
-
-if df_master.empty:
-    st.warning("⚠️ Data Master tidak ditemukan di Tab 'Master_Data'.")
-    st.stop()
 
 tab1, tab2 = st.tabs(["📝 Input Manual", "📤 Upload Bulk"])
 
@@ -56,7 +46,7 @@ with tab1:
         end_date = st.date_input("Ending Date")
     with col2:
         list_company = sorted(df_master["Company"].unique().tolist())
-        selected_company = st.selectbox("Brand Group Company", list_company)
+        selected_company = st.selectbox("Brand Group Company", list_company if list_company else ["Data Tidak Ditemukan"])
         
         filtered_brands = df_master[df_master["Company"] == selected_company]["Brand"].unique().tolist()
         brand_name = st.selectbox("Brand Name", ["All"] + sorted([str(b) for b in filtered_brands]))
@@ -78,6 +68,7 @@ with tab1:
         if not id_val:
             st.error("ID wajib diisi!")
         else:
+            # Data yang akan dikirim (Pastikan urutan kolom sesuai)
             new_row = [
                 id_val, sub_date.strftime("%d %b %Y"), ads_type, 
                 eff_date.strftime("%d %b %Y"), end_date.strftime("%d %b %Y"), 
@@ -89,14 +80,20 @@ with tab1:
             ]
             
             try:
-                # Membuka koneksi baru saat tombol diklik (Menghindari Sesi Expired)
                 client = get_gspread_client()
                 sheet = client.open_by_url(URL_GSHEET).sheet1
                 
-                # Gunakan cara append yang paling mendasar
-                sheet.append_row(new_row, value_input_option='USER_ENTERED')
+                # CARA PAKSA KE KOLOM A:
+                # 1. Cari baris terakhir yang benar-benar ada datanya di kolom A
+                all_col_a = sheet.col_values(1) 
+                next_row = len(all_col_a) + 1
                 
-                st.success("✅ Berhasil Disimpan!")
+                # 2. Gunakan metode update dengan koordinat spesifik A{next_row}
+                # Sintaks gspread terbaru: update(values, range_name)
+                target_range = f"A{next_row}"
+                sheet.update([new_row], target_range, value_input_option='USER_ENTERED')
+                
+                st.success(f"✅ Berhasil! Data masuk di Baris {next_row} Kolom A.")
                 st.balloons()
             except Exception as e:
                 st.error(f"Gagal simpan: {e}")
@@ -109,7 +106,13 @@ with tab2:
             df_csv = pd.read_csv(uploaded_file).fillna("")
             client = get_gspread_client()
             sheet = client.open_by_url(URL_GSHEET).sheet1
-            sheet.append_rows(df_csv.values.tolist(), value_input_option='USER_ENTERED')
-            st.success("✅ Upload Berhasil!")
+            
+            all_col_a = sheet.col_values(1)
+            next_row = len(all_col_a) + 1
+            
+            # Update banyak baris sekaligus mulai dari Kolom A
+            target_range = f"A{next_row}"
+            sheet.update(df_csv.values.tolist(), target_range, value_input_option='USER_ENTERED')
+            st.success("✅ Upload Berhasil mulai dari Kolom A!")
         except Exception as e:
             st.error(f"Gagal CSV: {e}")
