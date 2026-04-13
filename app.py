@@ -10,7 +10,7 @@ st.set_page_config(page_title="EBP Tracking System", layout="wide")
 # URL Spreadsheet Anda
 URL_GSHEET = "https://docs.google.com/spreadsheets/d/1NUIuYhkusKMvPhjhMb4QHPBrTgBpQytle3PJf4k7opY/edit"
 
-# --- 2. FUNGSI LOAD DATA (DENGAN CACHING) ---
+# --- 2. FUNGSI LOAD DATA ---
 @st.cache_data(ttl=60)
 def load_all_data():
     try:
@@ -102,25 +102,15 @@ with tab1:
             ]
             
             try:
-                # Mencari baris kosong
-                all_col_a = sheet_utama.col_values(1)
-                next_row = len(all_col_a) + 1
+                # MENGGUNAKAN APPEND_ROW (Metode paling aman untuk gspread v6+)
+                # Tidak perlu mencari next_row manual, append_row otomatis mencari baris kosong terakhir
+                sheet_utama.append_row(new_row, value_input_option='USER_ENTERED')
                 
-                # PERBAIKAN ERROR: Menggunakan format update yang lebih stabil
-                range_name = f"A{next_row}"
-                
-                # Menggunakan update tanpa argumen range_name eksplisit jika versi gspread terbaru
-                sheet_utama.update([new_row], range_name, value_input_option='USER_ENTERED')
-                
-                st.success(f"✅ Berhasil disimpan di Baris {next_row}!")
+                st.success(f"✅ Berhasil disimpan!")
                 st.balloons()
             except Exception as err:
-                # Jika masih error, gunakan alternatif method append_row yang lebih simpel
-                try:
-                    sheet_utama.append_row(new_row, value_input_option='USER_ENTERED')
-                    st.success("✅ Berhasil disimpan menggunakan metode Append!")
-                except Exception as e2:
-                    st.error(f"Gagal simpan: {err}")
+                st.error(f"Gagal simpan: {err}")
+                st.info("Coba refresh halaman jika error berlanjut.")
 
 with tab2:
     st.subheader("Upload Bulk CSV")
@@ -129,8 +119,10 @@ with tab2:
         df_csv = pd.read_csv(uploaded_file)
         if st.button("Konfirmasi Upload CSV"):
             try:
+                # Pastikan data kosong diisi string kosong
                 data_list = df_csv.fillna("").values.tolist()
-                # Gunakan append_rows untuk bulk upload agar lebih stabil
+                
+                # Gunakan append_rows untuk bulk data
                 sheet_utama.append_rows(data_list, value_input_option='USER_ENTERED')
                 st.success(f"✅ Berhasil upload {len(data_list)} baris!")
             except Exception as err:
