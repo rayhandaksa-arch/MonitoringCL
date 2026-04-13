@@ -5,34 +5,33 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="EBP Tracking System - Testing Mode", layout="wide")
+st.set_page_config(page_title="EBP Tracking System", layout="wide")
 
 # --- 1. KONEKSI GOOGLE SHEETS ---
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 try:
-    # Mengonversi st.secrets menjadi dictionary murni Python
-    # Ini krusial untuk memperbaiki error <Response [200]>
+    # Mengonversi st.secrets menjadi dictionary murni untuk menghindari error <Response [200]>
     secret_dict = dict(st.secrets["gcp_service_account"])
     
-    # Memperbaiki karakter newline pada private_key
+    # Memperbaiki karakter newline pada private_key jika ada
     secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
     
     creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
     client = gspread.authorize(creds)
     
-    # Buka menggunakan URL agar lebih pasti (Gunakan URL Spreadsheet kamu di sini)
+    # Masukkan URL Google Sheets kamu di sini
     url_gsheet = "https://docs.google.com/spreadsheets/d/1NUIuYhkusKMvPhjhMb4QHPBrTgBpQytle3PJf4k7opY/edit"
     sheet = client.open_by_url(url_gsheet).sheet1
     
 except Exception as e:
     st.error(f"❌ Koneksi Gagal: {e}")
-    st.info("Saran: Pastikan email service account sudah di-invite sebagai Editor di Spreadsheet.")
+    st.info("Pastikan email service account sudah di-invite sebagai Editor di Spreadsheet.")
     st.stop()
 
-# --- 2. UI APLIKASI UTAMA (Sisanya tetap sama dengan kode kamu) ---
-st.title("📊 EBP & Brand Revenue Tracking (Testing Mode)")
-st.caption("Akses Publik Aktif - Fitur Login Dinonaktifkan")
+# --- 2. UI APLIKASI UTAMA ---
+st.title("📊 EBP & Brand Revenue Tracking")
+st.caption("Mode Testing - Masukkan data untuk otomatis sinkron ke Google Sheets")
 
 tab1, tab2 = st.tabs(["📝 Input Manual", "📤 Upload Bulk (CSV)"])
 
@@ -68,35 +67,76 @@ with tab1:
         submitted = st.form_submit_button("Simpan ke Spreadsheet")
         
         if submitted:
-            # List 40 kolom (sesuaikan dengan urutan kolom di Google Sheets kamu)
+            # Konversi tanggal ke format string yang rapi
+            sub_date_str = sub_date.strftime("%d %b %Y")
+            eff_date_str = eff_date.strftime("%d %b %Y")
+            end_date_str = end_date.strftime("%d %b %Y")
+
+            # Susun data sesuai urutan kolom A sampai AM (40 Kolom)
             new_row = [
-                id_val, str(sub_date), ads_type, str(eff_date), str(end_date), 
-                f"{ads_type} {brand_group}", brand_group, brand_id, brand_name, 
-                "", vendor_name, vendor_id, "", "", rev_type, rev_val, 
-                percent, multiplier, "", "", claim_period, payment_method, 
-                "", link_cl, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", catman
+                id_val,          # A: ID
+                sub_date_str,    # B: Submission Date
+                ads_type,        # C: Ads Revenue Type
+                eff_date_str,    # D: Effective Date
+                end_date_str,    # E: Ending Date
+                f"{ads_type} {brand_group} {eff_date_str}", # F: Details
+                brand_group,     # G: Brand Group Company
+                brand_id,        # H: Brand Group Company ID
+                brand_name,      # I: Brand Name
+                "",              # J: Brand Id
+                vendor_name,     # K: Vendor Name
+                vendor_id,       # L: Vendor ID
+                "",              # M: Vendor Billing Name
+                "",              # N: Vendor Billing Id
+                rev_type,        # O: Ads Revenue
+                rev_val,         # P: Ads Revenue Value
+                percent,         # Q: %
+                multiplier,      # R: Multiplier
+                "",              # S: Max Claim
+                "",              # T: Partnership Period
+                claim_period,    # U: Claim Period
+                payment_method,  # V: Method
+                "",              # W: TOP
+                link_cl,         # X: Link CL
+                "",              # Y: Remarks
+                "",              # Z: Target Q1
+                "",              # AA: Target 2025
+                "",              # AB: Brand Check
+                eff_date_str,    # AC: Eff Date Claim
+                end_date_str,    # AD: End Date Claim
+                "",              # AE: Blank
+                "",              # AF: Sub Month
+                "",              # AG: Eff Month
+                "FALSE",         # AH: Back Date
+                "",              # AI: Unique Brand
+                "",              # AJ: Month Group
+                "",              # AK: Promo Funds
+                "",              # AL: Invoice Scheme
+                catman           # AM: Catman Name
             ]
             
             try:
-                sheet.append_row(new_row)
-                st.success(f"✅ Data untuk {brand_group} berhasil disimpan!")
+                # USER_ENTERED memastikan data masuk ke kolom masing-masing dan angka terbaca benar
+                sheet.append_row(new_row, value_input_option='USER_ENTERED')
+                st.success(f"✅ Berhasil! Data {brand_group} masuk ke baris baru.")
             except Exception as err:
                 st.error(f"Gagal simpan data: {err}")
 
 with tab2:
     st.subheader("Upload CSV untuk Data Banyak")
-    st.info("Pastikan urutan kolom di file CSV sama dengan urutan kolom di Google Sheets.")
-    uploaded_file = st.file_uploader("Upload file CSV", type="csv")
+    st.info("Gunakan fitur ini untuk upload banyak baris sekaligus. Pastikan urutan kolom di CSV sama dengan Spreadsheet.")
+    uploaded_file = st.file_uploader("Pilih file CSV", type="csv")
     
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
-        st.write("Preview Data (5 baris pertama):")
+        st.write("Preview 5 Baris Teratas:")
         st.dataframe(df.head())
         
-        if st.button("Konfirmasi Upload Semua"):
+        if st.button("Konfirmasi Upload CSV"):
             try:
                 data = df.fillna("").values.tolist()
-                sheet.append_rows(data)
-                st.success(f"✅ {len(data)} Baris berhasil ditambahkan!")
+                # Upload masal
+                sheet.append_rows(data, value_input_option='USER_ENTERED')
+                st.success(f"✅ Berhasil upload {len(data)} baris data!")
             except Exception as err:
                 st.error(f"Gagal upload CSV: {err}")
