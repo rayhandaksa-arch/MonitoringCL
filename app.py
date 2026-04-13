@@ -116,9 +116,19 @@ with tab1:
             ]
             
             try:
-                # USER_ENTERED memastikan data masuk ke kolom masing-masing dan angka terbaca benar
-                sheet.append_row(new_row, value_input_option='USER_ENTERED')
-                st.success(f"✅ Berhasil! Data {brand_group} masuk ke baris baru.")
+                # 1. Cari baris kosong berikutnya
+                # Kita ambil semua data di kolom A untuk menghitung jumlah baris yang terisi
+                col_a_values = sheet.col_values(1)
+                next_row = len(col_a_values) + 1
+                
+                # 2. Tentukan range yang akan diisi (A sampai AM adalah 39 kolom)
+                # Kita akan mengisi mulai dari kolom A di baris 'next_row'
+                range_to_update = f"A{next_row}"
+                
+                # 3. Masukkan data
+                sheet.update(range_to_update, [new_row], value_input_option='USER_ENTERED')
+                
+                st.success(f"✅ Berhasil! Data {brand_group} masuk ke baris {next_row} mulai dari kolom A.")
             except Exception as err:
                 st.error(f"Gagal simpan data: {err}")
 
