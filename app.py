@@ -8,23 +8,29 @@ from datetime import datetime
 st.set_page_config(page_title="EBP Tracking System - Testing Mode", layout="wide")
 
 # --- 1. KONEKSI GOOGLE SHEETS ---
-# Pastikan nama di st.secrets sesuai dengan di file secrets.toml atau Settings Streamlit Cloud
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 try:
-    # Mengambil kredensial dari secrets
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    # Mengonversi st.secrets menjadi dictionary murni Python
+    # Ini krusial untuk memperbaiki error <Response [200]>
+    secret_dict = dict(st.secrets["gcp_service_account"])
+    
+    # Memperbaiki karakter newline pada private_key
+    secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
+    
+    creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
     client = gspread.authorize(creds)
     
-    # GANTI: Pastikan nama file Google Sheets kamu sama persis
-    # Jika menggunakan nama di secrets.toml kamu: "DataStreamlit"
-    sheet = client.open("DataStreamlit").sheet1 
+    # Buka menggunakan URL agar lebih pasti (Gunakan URL Spreadsheet kamu di sini)
+    url_gsheet = "https://docs.google.com/spreadsheets/d/1NUIuYhkusKMvPhjhMb4QHPBrTgBpQytle3PJf4k7opY/edit"
+    sheet = client.open_by_url(url_gsheet).sheet1
+    
 except Exception as e:
     st.error(f"❌ Koneksi Gagal: {e}")
-    st.info("Pastikan email service account sudah di-invite sebagai Editor di Google Sheets.")
+    st.info("Saran: Pastikan email service account sudah di-invite sebagai Editor di Spreadsheet.")
     st.stop()
 
-# --- 2. UI APLIKASI UTAMA ---
+# --- 2. UI APLIKASI UTAMA (Sisanya tetap sama dengan kode kamu) ---
 st.title("📊 EBP & Brand Revenue Tracking (Testing Mode)")
 st.caption("Akses Publik Aktif - Fitur Login Dinonaktifkan")
 
