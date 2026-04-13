@@ -7,52 +7,50 @@ from datetime import datetime
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="EBP Tracking System", layout="wide")
 
-# --- 1. KONEKSI GOOGLE SHEETS ---
-scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+# URL Spreadsheet Anda (Ganti jika berbeda)
+URL_GSHEET = "https://docs.google.com/spreadsheets/d/1NUIuYhkusKMvPhjhMb4QHPBrTgBpQytle3PJf4k7opY/edit"
 
-@st.cache_data(ttl=600)  # Cache selama 10 menit agar tidak berat loadingnya
-def load_master_data():
+# --- 1. FUNGSI KONEKSI & LOAD DATA ---
+@st.cache_data(ttl=600)  # Data disimpan di memori selama 10 menit
+def load_all_data():
     try:
         secret_dict = dict(st.secrets["gcp_service_account"])
-        secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
+        if "private_key" in secret_dict:
+            secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
+        
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
         client = gspread.authorize(creds)
         
-        # Ambil data dari sheet Master_Data
-        # Pastikan Anda punya sheet bernama "Master_Data"
-        master_sheet = client.open_by_url(url_gsheet).worksheet("Master_Data")
-        data = master_sheet.get_all_records()
-        return pd.DataFrame(data)
-    except:
-        # Jika sheet Master_Data belum ada, beri data dummy untuk testing
-        return pd.DataFrame({
-            "Company": ["Unilever", "Unilever", "P&G", "P&G"],
-            "Brand": ["Pepsodent", "Dove", "Pantene", "Gillette"]
-        })
+        # Membuka Spreadsheet
+        spreadsheet = client.open_by_url(URL_GSHEET)
+        
+        # Load Master Data untuk Dropdown (3000 baris)
+        # Pastikan sheet "Master_Data" ada dengan kolom 'Company' dan 'Brand'
+        master_sheet = spreadsheet.worksheet("Master_Data")
+        df_master = pd.DataFrame(master_sheet.get_all_records())
+        
+        return spreadsheet.sheet1, df_master
+    except Exception as e:
+        st.error(f"❌ Gagal Load Data: {e}")
+        return None, pd.DataFrame(columns=["Company", "Brand"])
 
-try:
-    secret_dict = dict(st.secrets["gcp_service_account"])
-    secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
-    creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
-    client = gspread.authorize(creds)
-    
-    url_gsheet = "https://docs.google.com/spreadsheets/d/1NUIuYhkusKMvPhjhMb4QHPBrTgBpQytle3PJf4k7opY/edit"
-    sheet = client.open_by_url(url_gsheet).sheet1
-    
-    # Load data Brand & Company
-    df_master = load_master_data()
-    
-except Exception as e:
-    st.error(f"❌ Koneksi Gagal: {e}")
-    st.stop()
+# Inisialisasi data
+sheet, df_master = load_all_data()
 
 # --- 2. UI APLIKASI UTAMA ---
 st.title("📊 EBP & Brand Revenue Tracking")
+
+if df_master.empty:
+    st.warning("⚠️ Data Master kosong atau tidak ditemukan. Pastikan Sheet 'Master_Data' tersedia.")
+    st.stop()
 
 tab1, tab2 = st.tabs(["📝 Input Manual", "📤 Upload Bulk (CSV)"])
 
 with tab1:
     st.subheader("Form Input Category Manager")
+    
+    # Gunakan form agar halaman tidak reload setiap kali input diketik
     with st.form("input_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         
@@ -63,23 +61,22 @@ with tab1:
             eff_date = st.date_input("Effective Date")
             end_date = st.date_input("Ending Date")
             
-            # --- FITUR DEPENDENT DROPDOWN ---
-            # 1. Pilih Company
+        with col2:
+            # --- FILTER DROPDOWN BERLAPIS ---
             list_company = sorted(df_master["Company"].unique().tolist())
             selected_company = st.selectbox("Brand Group Company", list_company)
             
-        with col2:
-            # 2. Filter Brand berdasarkan Company yang dipilih
+            # Filter brand berdasarkan company yang dipilih di atas
             filtered_brands = df_master[df_master["Company"] == selected_company]["Brand"].unique().tolist()
             brand_name = st.selectbox("Brand Name", ["All"] + sorted(filtered_brands))
             
             brand_id = st.text_input("Brand Group Company ID")
             vendor_name = st.text_input("Vendor Name")
             vendor_id = st.text_input("Vendor ID")
-            rev_type = st.selectbox("Ads Revenue", ["Percentage", "Fixed Value"])
 
         with col3:
-            rev_val = st.number_input("Ads Revenue Value", value=0)
+            rev_type = st.selectbox("Ads Revenue", ["Percentage", "Fixed Value"])
+            rev_val = st.number_input("Ads Revenue Value (Fixed)", value=0)
             percent = st.text_input("% (e.g. 4.0%)")
             multiplier = st.selectbox("Multiplier", ["GV", "Sell In", "Fixed"])
             claim_period = st.selectbox("Claim Period", ["Monthly", "Quarterly", "Yearly"])
@@ -90,6 +87,57 @@ with tab1:
         submitted = st.form_submit_button("Simpan ke Spreadsheet")
         
         if submitted:
-            # (Logika simpan data sama seperti sebelumnya menggunakan sheet.update)
-            # ... simpan data ...
-            st.success("Data Tersimpan!")
+            # Format Data
+            sub_date_str = sub_date.strftime("%d %b %Y")
+            eff_date_str = eff_date.strftime("%d %b %Y")
+            end_date_str = end_date.strftime("%d %b %Y")
+
+            # Susun 40 kolom (Sesuaikan urutan kolom sheet Anda)
+            new_row = [
+                id_val, sub_date_str, ads_type, eff_date_str, end_date_str, 
+                f"{ads_type} {selected_company}", selected_company, brand_id, brand_name, 
+                "", vendor_name, vendor_id, "", "", rev_type, rev_val, 
+                percent, multiplier, "", "", claim_period, payment_method, 
+                "", link_cl, "", "", "", "", eff_date_str, end_date_str, 
+                "", "", "", "FALSE", "", "", "", "", catman
+            ]
+            
+            try:
+                # Cari baris kosong di Kolom A
+                all_col_a = sheet.col_values(1)
+                next_row = len(all_col_a) + 1
+                
+                # Cek jika butuh tambah baris fisik
+                if next_row > sheet.row_count:
+                    sheet.add_rows(10)
+                
+                # Update data mulai dari kolom A
+                sheet.update(range_name=f"A{next_row}", values=[new_row], value_input_option='USER_ENTERED')
+                
+                st.success(f"✅ Berhasil! Data {brand_name} ({selected_company}) masuk ke Baris {next_row}")
+                st.balloons()
+            except Exception as err:
+                st.error(f"Gagal simpan data: {err}")
+
+with tab2:
+    st.subheader("Upload Bulk CSV")
+    uploaded_file = st.file_uploader("Pilih file CSV", type="csv")
+    if uploaded_file:
+        df_csv = pd.read_csv(uploaded_file)
+        st.write("Preview Data:")
+        st.dataframe(df_csv.head())
+        
+        if st.button("Konfirmasi Upload CSV"):
+            try:
+                data_list = df_csv.fillna("").values.tolist()
+                all_col_a = sheet.col_values(1)
+                next_row = len(all_col_a) + 1
+                
+                needed_rows = (next_row + len(data_list)) - sheet.row_count
+                if needed_rows > 0:
+                    sheet.add_rows(needed_rows)
+
+                sheet.update(range_name=f"A{next_row}", values=data_list, value_input_option='USER_ENTERED')
+                st.success(f"✅ Berhasil upload {len(data_list)} baris!")
+            except Exception as err:
+                st.error(f"Gagal upload CSV: {err}")
